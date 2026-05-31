@@ -628,7 +628,7 @@ def render():
 
         with st.spinner("Menghitung prioritas sektor..."):
             priority_data = analytics.compute_sector_priority(
-                pdrb_data, selected_kode, tabel=sp_t,
+                pdrb_data, kode, tabel=sp_t,
             )
 
         if not priority_data:
@@ -685,7 +685,7 @@ def render():
 
         with st.spinner("Menghitung base multiplier..."):
             bm_data = analytics.compute_base_multiplier(
-                pdrb_data, selected_kode, tabel=bm_t,
+                pdrb_data, kode, tabel=bm_t,
             )
 
         if not bm_data:
