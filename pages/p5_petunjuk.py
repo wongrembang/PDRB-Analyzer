@@ -20,6 +20,7 @@ def render():
         "🗺️ Analisis Regional",
         "📈 Proyeksi",
         "📐 Metode Analisis",
+        "🧪 Metode Lanjutan",
         "❓ FAQ",
     ])
 
@@ -271,44 +272,107 @@ $$KSI_{ij} = \\sum_k |s_{ik} - s_{jk}|$$
 - Nilai 2 → struktur sangat berbeda (tidak ada kesamaan sama sekali)
         """)
 
-    # ── FAQ ──
+    # ── METODE LANJUTAN ──
     with sections[5]:
         st.markdown("""
-## Pertanyaan Umum (FAQ)
+## Metode Analisis Lanjutan
 
-**Q: Mengapa ada data yang kosong/None?**
-A: Data triwulanan tertentu mungkin belum tersedia atau belum dilaporkan ke BPS.
-Dashboard akan menampilkan nilai kosong untuk periode tersebut.
-
-**Q: Mengapa peta tidak muncul?**
-A: Fitur peta membutuhkan file GeoJSON yang diunduh otomatis dari internet.
-Pastikan komputer terhubung ke internet saat pertama kali membuka halaman peta.
-File akan di-cache secara lokal setelah berhasil diunduh.
-
-**Q: Apa perbedaan ADHB dan ADHK?**
-A: ADHB (Atas Dasar Harga Berlaku) menggunakan harga pada tahun berjalan,
-cocok untuk melihat nilai nominal dan perbandingan distribusi.
-ADHK (Atas Dasar Harga Konstan 2010) menghilangkan pengaruh inflasi,
-lebih tepat untuk analisis pertumbuhan riil.
-
-**Q: Bagaimana cara upload data terbaru?**
-A: Buka menu **⚙️ Manajemen Data & User**, tab "Upload Data".
-Upload file Excel dengan format yang sama dengan file asli.
-
-**Q: Siapa yang bisa mengakses dashboard?**
-A: Akses dibatasi dengan sistem login username/password.
-Admin dapat menambah/menghapus user melalui menu Manajemen.
-
-**Q: Bagaimana cara mereset password?**
-A: Admin dapat mereset password melalui menu Manajemen Data & User.
-
-**Q: Seberapa akurat proyeksi PDRB?**
-A: Proyeksi adalah estimasi berdasarkan pola historis, bukan prediksi pasti.
-Akurasi bergantung pada stabilitas tren data dan kondisi ekonomi ke depan.
-Gunakan proyeksi sebagai referensi perencanaan, bukan angka pasti.
-
-**Q: Apa itu "Kelompok Pembangunan"?**
-A: Pengelompokan kabupaten/kota berdasarkan wilayah Eks-Karesidenan
-(Banyumas, Kedu, Surakarta, Semarang, Pati, Pekalongan).
-Digunakan untuk analisis ketimpangan per kawasan.
+Fitur-fitur berikut merupakan tambahan analisis ekonomi regional tingkat lanjut
+yang tersedia di halaman **Analisis Satu Wilayah** (tab Sektor Prioritas & Base Multiplier)
+dan **Analisis Regional** (tab Konvergensi, HHI, Gravitasi, Overlay Prioritas).
         """)
+
+        adv1, adv2, adv3, adv4, adv5 = st.tabs([
+            "📉 Konvergensi",
+            "🎯 HHI Diversifikasi",
+            "🌐 Gravitasi Ekonomi",
+            "⭐ Overlay Prioritas",
+            "🏗️ Base Multiplier",
+        ])
+
+
+        with adv1:
+            st.markdown("""
+### Konvergensi / Divergensi
+
+Mengukur apakah kesenjangan PDRB per kapita antar wilayah **mengecil (konvergen)** atau **membesar (divergen)**.
+
+**Sigma Convergence:** Std dev ln(PDRB/kapita) per periode. Turun = konvergen. Naik = divergen.
+
+**Beta Convergence:** Regresi pertumbuhan vs PDRB awal.
+Formula: `g(y) = a + B * ln(y0) + e`
+
+| Koef B | Interpretasi |
+|--------|-------------|
+| < 0 | Konvergen - wilayah miskin tumbuh lebih cepat |
+| > 0 | Divergen - wilayah kaya tumbuh lebih cepat |
+| = 0 | Tidak ada pola konvergensi |
+            """)
+
+        with adv2:
+            st.markdown("""
+### HHI - Diversifikasi Ekonomi
+
+Rumus: **HHI = Jumlah(si kuadrat)** dimana si = share sektor i terhadap PDRB total.
+
+| HHI | Kategori | Makna |
+|-----|---------|-------|
+| < 0.15 | Terdiversifikasi | Ekonomi tersebar merata, lebih resilient |
+| 0.15-0.25 | Moderat | Cukup beragam |
+| > 0.25 | Terkonsentrasi | Rentan guncangan pada sektor dominan |
+
+HHI menurun dari waktu ke waktu = diversifikasi sedang berlangsung (positif).
+            """)
+
+        with adv3:
+            st.markdown("""
+### Model Gravitasi Ekonomi
+
+Rumus: **I(i,j) = PDRB_i x PDRB_j / jarak_ij kuadrat**
+
+Jarak dihitung dengan Haversine formula (jarak lingkaran besar di bumi).
+
+| Nilai Interaksi | Makna |
+|-----------------|-------|
+| Tinggi | Integrasi ekonomi kuat - perdagangan, investasi, mobilitas |
+| Sedang | Perlu peningkatan konektivitas |
+| Rendah | Jarak jauh atau PDRB kecil |
+
+Pasangan dengan interaksi tinggi adalah kandidat kawasan metropolitan / koridor ekonomi.
+            """)
+
+        with adv4:
+            st.markdown("""
+### Overlay Matriks Prioritas Sektor
+
+Menggabungkan tiga metode: **LQ + Shift Share + RRG** menjadi skor prioritas terpadu.
+
+| Komponen | Kriteria | Skor |
+|----------|----------|------|
+| LQ | >= 1 (sektor basis) | +2 |
+| CE (Shift Share) | > 0 (kompetitif) | +2 |
+| RRG Kuadran | Leading/Improving/Weakening/Lagging | 3/2/1/0 |
+
+| Skor | Label | Rekomendasi |
+|------|-------|-------------|
+| 6-7 | Unggulan Utama | Pertahankan & kembangkan |
+| 4-5 | Potensial | Dorong dengan kebijakan fiskal |
+| 2-3 | Perlu Perhatian | Monitor & intervensi |
+| 0-1 | Tertinggal | Evaluasi & pertimbangkan diversifikasi |
+            """)
+
+        with adv5:
+            st.markdown("""
+### Economic Base Multiplier
+
+Sektor Basis = sektor dengan LQ >= 1 (produksi melebihi kebutuhan lokal).
+
+**PDRB Basis sektor i** = PDRB(i) x (1 - 1/LQ(i))
+
+**Multiplier (m)** = PDRB_total / PDRB_basis
+
+Artinya: setiap Rp 1 ekspansi di sektor basis mendorong total PDRB sebesar Rp m.
+
+Multiplier tinggi = daya ungkit besar. Multiplier rendah = sektor basis perlu diperkuat.
+            """)
+
