@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 
 import config
 from data.loader import load_all_data, get_sectors_df, compute_growth, compute_distribution
@@ -738,11 +739,7 @@ def render():
             with st.expander("📖 Interpretasi Base Multiplier", expanded=False):
                 mult_val = latest_bm["multiplier"]
                 st.markdown(
-                    f"**Multiplier = {mult_val:.3f}x** artinya: "
-                    f"setiap Rp 1 ekspansi di sektor **basis** (LQ \u2265 1) mendorong "
-                    f"total perekonomian {selected_name} sebesar **Rp {mult_val:.2f}**.\n\n"
-                    "**Sektor Basis** = sektor dengan LQ \u2265 1 (wilayah lebih "
-                    "terspesialisasi dibanding rata-rata provinsi). "
-                    "Semakin tinggi multiplier → semakin kuat daya ungkit sektor basis "
-                    "terhadap ekonomi lokal."
+                    "**Sektor Basis** = sektor dengan LQ \u2265 1 (lebih spesialisasi "
+                    "dari rata-rata provinsi). Semakin tinggi multiplier, semakin besar "
+                    "daya ungkit sektor basis terhadap total perekonomian lokal."
                 )
