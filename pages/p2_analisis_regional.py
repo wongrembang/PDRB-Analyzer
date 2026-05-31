@@ -1060,6 +1060,3 @@ infrastruktur konektivitas untuk meningkatkan integrasi regional.
                 st.dataframe(df_all_ov, use_container_width=True, hide_index=True)
             else:
                 st.info("Tidak ada sektor dengan skor prioritas tinggi di wilayah terpilih.")
-                    df_all_ov, use_container_width=True, hide_index=True)
-            else:
-                st.info("Tidak ada sektor dengan skor prioritas tinggi di wilayah terpilih.")
