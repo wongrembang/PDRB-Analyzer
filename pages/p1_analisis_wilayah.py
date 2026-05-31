@@ -736,8 +736,6 @@ def render():
 
             with st.expander("📖 Interpretasi Base Multiplier", expanded=False):
                 mult_val = latest_bm["multiplier"]
-            with st.expander("📖 Interpretasi Base Multiplier", expanded=False):
-                mult_val = latest_bm["multiplier"]
                 st.markdown(
                     "**Sektor Basis** = sektor dengan LQ \u2265 1 (lebih spesialisasi "
                     "dari rata-rata provinsi). Semakin tinggi multiplier, semakin besar "
