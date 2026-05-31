@@ -674,7 +674,7 @@ def render():
                 """)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # TAB 6: ECONOMIC BASE MULTIPLIER
+    # TAB 6: ECONOMIC BASE MULTIPLIER  [v2.1]
     # ══════════════════════════════════════════════════════════════════════════
     with tab6:
         st.subheader("🏗️ Economic Base Multiplier")
