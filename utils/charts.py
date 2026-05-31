@@ -739,7 +739,7 @@ def chart_bubble_map(kode_vals: dict, kode_names: dict,
         fig = go.Figure()
         fig.update_layout(title=title, height=height)
         _apply_dark(fig)
-    return fig
+        return fig
 
     df_map = pd.DataFrame(rows)
 
