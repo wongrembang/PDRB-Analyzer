@@ -552,7 +552,7 @@ def render():
                 sec_cols = st.columns(3)
                 sec_checked = {}
                 for _idx, (_ks, _meta) in enumerate(trail_data.items()):
-                    _label = f"{_clean_kode(_ks)} – {_meta['name'][:40]}"
+                    _label = f"{_clean_kode(_ks)} – {_meta.get('name', str(_ks))[:40]}"
                     with sec_cols[_idx % 3]:
                         sec_checked[_ks] = st.checkbox(_label, key=f"rrg_sec_{_ks}")
 
