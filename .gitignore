@@ -1,6 +1,6 @@
 # ── Data sensitif & besar ─────────────────────────────────────────────────────
-*.xlsx
-*.xls
+
+
 *.pkl
 *.pickle
 users.yaml
