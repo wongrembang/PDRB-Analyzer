@@ -1,0 +1,35 @@
+# ── Data sensitif & besar ─────────────────────────────────────────────────────
+*.xlsx
+*.xls
+*.pkl
+*.pickle
+users.yaml
+activity.log
+
+# ── Cache & build Python ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Laporan & upload sementara ────────────────────────────────────────────────
+reports/*.pdf
+reports/*.xlsx
+reports/*.docx
+uploads/
+
+# ── Environment & IDE ─────────────────────────────────────────────────────────
+.env
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+*.DS_Store
+
+# ── Streamlit cache lokal ─────────────────────────────────────────────────────
+.streamlit/secrets.toml
