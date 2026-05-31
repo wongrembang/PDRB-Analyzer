@@ -912,8 +912,8 @@ def compute_sector_priority(pdrb_data, kode, tabel="adhb", periods=None,
             ce_vals[ks] = None
 
     # ── RRG Quadrant (periode terakhir vs sebelumnya) ─────────────────────
-    rrg_data = compute_rrg_trail(pdrb_data, kode, tabel=tabel,
-                                  ref_kode=ref_kode, n_periods=8)
+    rrg_data = compute_rrg_trail(pdrb_data, kode, kode_prov=ref_kode,
+                                  tabel=tabel, n_periods=8)
     rrg_quad = {}
     for ks, rd in rrg_data.items():
         trail = rd.get("trail", [])
