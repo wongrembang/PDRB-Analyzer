@@ -160,11 +160,15 @@ def render():
     kode_names = {k: v["name"] for k, v in kode_wilayah.items()}
 
     # ── TABS ──
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📊 Perbandingan Nilai",
         "🔬 LQ & Shift Share",
         "🔄 RRG Regional",
         "⚖️ Analisis Ketimpangan",
+        "📉 Konvergensi/Divergensi",
+        "🎯 Diversifikasi (HHI)",
+        "🌐 Gravitasi Ekonomi",
+        "⭐ Overlay Prioritas",
     ])
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -811,3 +815,251 @@ def render():
                         """)
                 else:
                     st.info("Tidak cukup data untuk analisis kemiripan struktur.")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 5: KONVERGENSI / DIVERGENSI
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab5:
+        st.subheader("📉 Analisis Konvergensi / Divergensi Ekonomi")
+        st.caption("Mengukur apakah kesenjangan PDRB per kapita antar wilayah mengecil (konvergen) "
+                   "atau membesar (divergen) dari waktu ke waktu.")
+
+        conv_tabel = st.radio("Tabel", ["ADHB", "ADHK"], horizontal=True, key="conv_tbl")
+        conv_t = "adhb" if conv_tabel == "ADHB" else "adhk"
+
+        kab_kodes = [k for k in selected_kodes if k != "3300"]
+        if len(kab_kodes) < 3:
+            st.warning("Pilih minimal 3 kabupaten/kota untuk analisis konvergensi.")
+        else:
+            with st.spinner("Menghitung konvergensi..."):
+                conv_result = analytics.compute_convergence(
+                    pdrb_data, penduduk_data, kab_kodes, tabel=conv_t
+                )
+
+            if not conv_result or not conv_result.get("sigma"):
+                st.warning("Data tidak cukup untuk analisis konvergensi.")
+            else:
+                sigma_s = conv_result["sigma"]
+                beta_r  = conv_result.get("beta")
+
+                # Indikator konvergensi
+                if len(sigma_s) >= 2:
+                    trend_dir = sigma_s[-1]["sigma"] - sigma_s[0]["sigma"]
+                    is_conv   = trend_dir < 0
+                    st.markdown(
+                        f'<div style="background:{"rgba(56,211,159,0.12)" if is_conv else "rgba(248,81,73,0.12)"}; '
+                        f'border-left:4px solid {"#3fb950" if is_conv else "#f85149"};'
+                        f'padding:0.8rem 1.2rem;border-radius:8px;margin-bottom:1rem;">'
+                        f'<b>{"✅ KONVERGEN" if is_conv else "⚠️ DIVERGEN"}</b> — '
+                        f'σ {"menurun" if is_conv else "meningkat"} dari '
+                        f'{sigma_s[0]["sigma"]:.5f} ({sigma_s[0]["period"]}) ke '
+                        f'{sigma_s[-1]["sigma"]:.5f} ({sigma_s[-1]["period"]})'
+                        f'</div>', unsafe_allow_html=True
+                    )
+
+                fig_conv = charts.chart_convergence(
+                    sigma_s, beta_r,
+                    title=f"Konvergensi Ekonomi — {len(kab_kodes)} Kab/Kota Terpilih"
+                )
+                st.plotly_chart(fig_conv, use_container_width=True)
+
+                if beta_r:
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Beta (β)", f"{beta_r['beta']:.5f}",
+                              help="Negatif = konvergen, Positif = divergen")
+                    c2.metric("R²", f"{beta_r['r2']:.4f}")
+                    c3.metric("Kesimpulan",
+                              "Konvergen ✅" if beta_r["converging"] else "Divergen ⚠️")
+
+                with st.expander("📖 Interpretasi Konvergensi", expanded=False):
+                    st.markdown("""
+**Sigma Convergence (σ-convergence):**
+Jika standar deviasi ln(PDRB/kapita) antar wilayah *menurun* dari waktu ke waktu →
+kesenjangan mengecil → **konvergen**.
+
+**Beta Convergence (β-convergence):**
+Regresi pertumbuhan PDRB/kapita terhadap nilai awal. Jika koefisien β **negatif** dan
+signifikan → wilayah yang tertinggal tumbuh lebih cepat → **konvergen** (catching-up effect).
+
+| Nilai β | Interpretasi |
+|---|---|
+| < 0 | Konvergen — wilayah miskin tumbuh lebih cepat |
+| > 0 | Divergen — wilayah kaya tumbuh lebih cepat |
+| ≈ 0 | Tidak ada pola konvergensi |
+                    """)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 6: DIVERSIFIKASI EKONOMI (HHI)
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab6:
+        st.subheader("🎯 Indeks Diversifikasi Ekonomi (HHI)")
+        st.caption("Herfindahl-Hirschman Index mengukur tingkat konsentrasi/diversifikasi "
+                   "struktur ekonomi. HHI rendah = terdiversifikasi; tinggi = terkonsentrasi.")
+
+        hhi_tabel = st.radio("Tabel", ["ADHB", "ADHK"], horizontal=True, key="hhi_tbl")
+        hhi_t = "adhb" if hhi_tabel == "ADHB" else "adhk"
+
+        with st.spinner("Menghitung HHI..."):
+            hhi_dict = analytics.compute_hhi_regional(
+                pdrb_data, selected_kodes, tabel=hhi_t
+            )
+
+        fig_hhi = charts.chart_hhi(
+            hhi_dict, kode_names,
+            title=f"Indeks HHI Diversifikasi Ekonomi ({hhi_tabel})"
+        )
+        st.plotly_chart(fig_hhi, use_container_width=True)
+
+        # Tabel snapshot periode terakhir
+        prov_perds_hhi = sorted(pdrb_data.get("3300", {}).get(hhi_t, {}).get("periods", []))
+        if prov_perds_hhi:
+            last_p_hhi = prov_perds_hhi[-1]
+            hhi_rows = []
+            for kode in selected_kodes:
+                series = hhi_dict.get(kode, [])
+                latest = next((s for s in reversed(series) if s["period"] == last_p_hhi), None)
+                if not latest and series:
+                    latest = series[-1]
+                if latest:
+                    hhi_val = latest["hhi"]
+                    if hhi_val < 0.15:
+                        kat = "🟢 Terdiversifikasi"
+                    elif hhi_val < 0.25:
+                        kat = "🟡 Moderat"
+                    else:
+                        kat = "🔴 Terkonsentrasi"
+                    hhi_rows.append({
+                        "Wilayah": kode_names.get(kode, kode),
+                        "Periode": latest["period"],
+                        "HHI":     f"{hhi_val:.4f}",
+                        "Kategori": kat,
+                        "Jml Sektor Aktif": latest["n_sectors"],
+                    })
+            if hhi_rows:
+                import pandas as _pd2
+                st.dataframe(_pd2.DataFrame(hhi_rows), use_container_width=True, hide_index=True)
+
+        with st.expander("📖 Interpretasi HHI", expanded=False):
+            st.markdown("""
+**Rumus:** HHI = Σ(sᵢ²) di mana sᵢ = share sektor i terhadap total PDRB
+
+| Nilai HHI | Kategori | Interpretasi |
+|---|---|---|
+| < 0.15 | 🟢 Terdiversifikasi | Ekonomi tersebar merata di banyak sektor |
+| 0.15 – 0.25 | 🟡 Moderat | Sebagian terkonsentrasi, masih cukup beragam |
+| > 0.25 | 🔴 Terkonsentrasi | Ekonomi sangat bergantung pada sedikit sektor |
+
+Wilayah dengan HHI tinggi lebih **rentan terhadap guncangan** pada sektor dominannya.
+            """)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 7: GRAVITASI EKONOMI
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab7:
+        st.subheader("🌐 Analisis Gravitasi Ekonomi")
+        st.caption("Model gravitasi mengukur potensi interaksi ekonomi antar wilayah "
+                   "berdasarkan besaran PDRB dan jarak geografis.")
+
+        grav_tabel = st.radio("Tabel", ["ADHB", "ADHK"], horizontal=True, key="grav_tbl")
+        grav_t = "adhb" if grav_tabel == "ADHB" else "adhk"
+        top_n_grav = st.slider("Tampilkan Top-N Pasangan", 10, 50, 20, key="grav_topn")
+
+        with st.spinner("Menghitung gravitasi ekonomi..."):
+            grav_rows = analytics.compute_gravity(
+                pdrb_data, selected_kodes, tabel=grav_t
+            )
+
+        if not grav_rows:
+            st.warning("Data koordinat atau PDRB tidak cukup. Pastikan minimal 2 kab/kota dipilih.")
+        else:
+            fig_grav = charts.chart_gravity(
+                grav_rows, kode_names, top_n=top_n_grav,
+                title=f"Top-{top_n_grav} Interaksi Gravitasi Ekonomi"
+            )
+            st.plotly_chart(fig_grav, use_container_width=True)
+
+            import pandas as _pd3
+            df_grav = _pd3.DataFrame([{
+                "Wilayah I":    kode_names.get(r["kode_i"], r["kode_i"]),
+                "Wilayah J":    kode_names.get(r["kode_j"], r["kode_j"]),
+                "PDRB I (Jt)":  f"{r['pdrb_i']:,.2f}",
+                "PDRB J (Jt)":  f"{r['pdrb_j']:,.2f}",
+                "Jarak (km)":   f"{r['jarak_km']:.1f}",
+                "Interaksi":    f"{r['interaction']:,.2f}",
+            } for r in grav_rows[:top_n_grav]])
+            with st.expander("📋 Tabel Interaksi Gravitasi", expanded=False):
+                st.dataframe(df_grav, use_container_width=True, hide_index=True)
+
+            with st.expander("📖 Interpretasi Model Gravitasi", expanded=False):
+                st.markdown("""
+**Rumus:** Interaksi(i,j) = (PDRB_i × PDRB_j) / Jarak_ij²
+
+Pasangan wilayah dengan nilai interaksi **tinggi** memiliki potensi:
+- Integrasi ekonomi yang kuat (perdagangan, investasi, tenaga kerja)
+- Kandidat untuk **kawasan metropolitan / koridor ekonomi**
+- Saling ketergantungan tinggi dalam rantai pasokan
+
+Pasangan dengan interaksi **rendah** karena jarak jauh atau PDRB kecil → perlu
+infrastruktur konektivitas untuk meningkatkan integrasi regional.
+                """)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 8: OVERLAY PRIORITAS REGIONAL
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab8:
+        st.subheader("⭐ Overlay Prioritas Sektor — Perbandingan Regional")
+        st.caption("Bandingkan matriks prioritas sektor (LQ + SS + RRG) antar beberapa wilayah.")
+
+        ov_tabel = st.radio("Tabel", ["ADHB", "ADHK"], horizontal=True, key="ov_tbl")
+        ov_t = "adhb" if ov_tabel == "ADHB" else "adhk"
+
+        kab_sel_ov = [k for k in selected_kodes if k != "3300"]
+        if not kab_sel_ov:
+            st.warning("Pilih minimal 1 kabupaten/kota.")
+        else:
+            sel_ov = st.selectbox(
+                "Pilih wilayah untuk ditampilkan matriks prioritasnya:",
+                kab_sel_ov,
+                format_func=lambda x: kode_names.get(x, x),
+                key="ov_sel_wil"
+            )
+
+            with st.spinner("Menghitung prioritas sektor..."):
+                prio_data = analytics.compute_sector_priority(
+                    pdrb_data, sel_ov, tabel=ov_t
+                )
+
+            if prio_data:
+                fig_ov = charts.chart_sector_priority(
+                    prio_data,
+                    title=f"Matriks Prioritas Sektor — {kode_names.get(sel_ov, sel_ov)}"
+                )
+                st.plotly_chart(fig_ov, use_container_width=True)
+
+            # Tabel ringkasan semua wilayah terpilih
+            st.markdown("#### 📋 Ringkasan Sektor Unggulan Semua Wilayah Terpilih")
+            import pandas as _pd4
+            all_rows = []
+            for kode in kab_sel_ov:
+                pd_data = analytics.compute_sector_priority(pdrb_data, kode, tabel=ov_t)
+                top3 = [d for d in pd_data if d["priority_score"] >= 4][:3]
+                for d in top3:
+                    all_rows.append({
+                        "Wilayah":    kode_names.get(kode, kode)[:25],
+                        "Sektor":     f"{d['kode_skt']} – {d['nama'][:35]}",
+                        "LQ":         f"{d['lq']:.3f}" if d["lq"] else "—",
+                        "RRG":        d["rrg_quad"],
+                        "CE Status":  d["ce_status"],
+                        "Prioritas":  d["priority_label"],
+                        "Skor":       d["priority_score"],
+                    })
+            if all_rows:
+                df_all_ov = _pd4.DataFrame(all_rows).sort_values(
+                    ["Wilayah", "Skor"], ascending=[True, False]
+                )
+                st.dataframe(df_all_ov, use_container_width=True, hide_index=True)
+            else:
+                st.info("Tidak ada sektor dengan skor prioritas tinggi di wilayah terpilih.")
+                    df_all_ov, use_container_width=True, hide_index=True)
+            else:
+                st.info("Tidak ada sektor dengan skor prioritas tinggi di wilayah terpilih.")

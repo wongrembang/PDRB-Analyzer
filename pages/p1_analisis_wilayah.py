@@ -105,11 +105,13 @@ def render():
         return
 
     # ── TAB ANALISIS ──
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Grafik & Tabel",
         "🥧 Distribusi ADHB",
         "🔬 LQ & Shift Share",
         "🔄 RRG",
+        "⭐ Sektor Prioritas",
+        "🏗️ Base Multiplier",
     ])
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -611,4 +613,136 @@ def render():
                 st.dataframe(
                     pd.DataFrame(rows_tbl).sort_values("RS-Ratio", ascending=False),
                     use_container_width=True, hide_index=True,
+                )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 5: SEKTOR PRIORITAS (LQ + SS + RRG Overlay)
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab5:
+        st.subheader("⭐ Matriks Prioritas Sektor")
+        st.caption("Gabungan analisis LQ, Shift Share (Competitive Effect), dan RRG untuk "
+                   "mengidentifikasi sektor unggulan, potensial, dan tertinggal.")
+
+        sp_tabel = st.radio("Tabel", ["ADHB", "ADHK"], horizontal=True, key="sp_tbl")
+        sp_t = "adhb" if sp_tabel == "ADHB" else "adhk"
+
+        with st.spinner("Menghitung prioritas sektor..."):
+            priority_data = analytics.compute_sector_priority(
+                pdrb_data, selected_kode, tabel=sp_t,
+            )
+
+        if not priority_data:
+            st.warning("Data tidak cukup untuk analisis prioritas sektor.")
+        else:
+            # Scatter plot
+            fig_sp = charts.chart_sector_priority(
+                priority_data,
+                title=f"Matriks Prioritas Sektor – {selected_name}",
+            )
+            st.plotly_chart(fig_sp, use_container_width=True)
+
+            # Tabel hasil
+            with st.expander("📋 Tabel Prioritas Sektor", expanded=True):
+                df_sp = pd.DataFrame([{
+                    "Kode":        _clean_kode(d["kode_skt"]),
+                    "Sektor":      d["nama"][:50],
+                    "LQ":          f"{d['lq']:.3f}" if d["lq"] else "—",
+                    "Status LQ":   d["lq_status"],
+                    "CE (SS)":     f"{d['ce']:,.0f}" if d["ce"] else "—",
+                    "Status CE":   d["ce_status"],
+                    "RRG Kuadran": d["rrg_quad"],
+                    "Skor":        d["priority_score"],
+                    "Prioritas":   d["priority_label"],
+                } for d in priority_data])
+                st.dataframe(df_sp, use_container_width=True, hide_index=True)
+
+            with st.expander("📖 Cara Membaca Matriks Prioritas", expanded=False):
+                st.markdown("""
+**Skor Prioritas** dihitung dari 3 komponen:
+| Komponen | Kriteria | Skor |
+|---|---|---|
+| **LQ** | ≥ 1 (sektor basis) | +2 |
+| **Competitive Effect (SS)** | > 0 (lebih kompetitif dari provinsi) | +2 |
+| **RRG Kuadran** | Leading = +3, Improving = +2, Weakening = +1, Lagging = 0 | |
+
+**Label Prioritas:**
+- ⭐ **Unggulan Utama** (skor 6–7): Basis, kompetitif, momentum positif → Pertahankan & kembangkan
+- ✅ **Potensial** (skor 4–5): Kuat di sebagian aspek → Dorong dengan kebijakan
+- ⚠️ **Perlu Perhatian** (skor 2–3): Lemah di beberapa aspek → Monitor & intervensi
+- 🔻 **Tertinggal** (skor 0–1): Tidak basis, tidak kompetitif → Evaluasi atau alihkan
+                """)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 6: ECONOMIC BASE MULTIPLIER
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab6:
+        st.subheader("🏗️ Economic Base Multiplier")
+        st.caption("Mengukur seberapa besar dampak ekspansi sektor basis terhadap "
+                   "total perekonomian wilayah.")
+
+        bm_tabel = st.radio("Tabel", ["ADHB", "ADHK"], horizontal=True, key="bm_tbl")
+        bm_t = "adhb" if bm_tabel == "ADHB" else "adhk"
+
+        with st.spinner("Menghitung base multiplier..."):
+            bm_data = analytics.compute_base_multiplier(
+                pdrb_data, selected_kode, tabel=bm_t,
+            )
+
+        if not bm_data:
+            st.warning("Data tidak cukup untuk menghitung base multiplier.")
+        else:
+            # Grafik multiplier time-series
+            perds_bm = [d["period"]     for d in bm_data]
+            mults_bm = [d["multiplier"] for d in bm_data]
+
+            fig_bm = go.Figure()
+            fig_bm.add_trace(go.Scatter(
+                x=perds_bm, y=mults_bm, mode="lines+markers",
+                name="Multiplier",
+                line=dict(color=config.COLORS["primary"], width=2.5),
+                marker=dict(size=5),
+                hovertemplate="Periode: %{x}<br>Multiplier: %{y:.3f}<extra></extra>",
+            ))
+            fig_bm.update_layout(
+                title=f"Economic Base Multiplier – {selected_name}",
+                xaxis=dict(title="Periode", tickangle=-45),
+                yaxis=dict(title="Multiplier"),
+                height=380,
+                margin=dict(l=60, r=20, t=50, b=100),
+                hovermode="x unified",
+            )
+            charts._apply_dark(fig_bm)
+            st.plotly_chart(fig_bm, use_container_width=True)
+
+            # Snapshot periode terakhir
+            latest_bm = bm_data[-1]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Periode",       latest_bm["period"])
+            c2.metric("Total PDRB",    f"{latest_bm['total_pdrb']/1e6:,.3f} T")
+            c3.metric("PDRB Basis",    f"{latest_bm['basic_pdrb']/1e6:,.3f} T")
+            c4.metric("Multiplier",    f"{latest_bm['multiplier']:.3f}x",
+                      help="1 unit ekspansi sektor basis → multiplier unit total PDRB")
+
+            # Sektor basis periode terakhir
+            with st.expander("📋 Sektor Basis (Periode Terakhir)", expanded=True):
+                df_bs = pd.DataFrame([{
+                    "Kode":  _clean_kode(s["kode"]),
+                    "Nama Sektor": s["nama"][:50],
+                    "LQ":    f"{s['lq']:.3f}",
+                    "PDRB Basis (Jt Rp)": f"{s['nilai_basic']:,.2f}",
+                } for s in latest_bm["basic_sectors"]])
+                st.dataframe(df_bs, use_container_width=True, hide_index=True)
+
+            with st.expander("📖 Interpretasi Base Multiplier", expanded=False):
+                mult_val = latest_bm["multiplier"]
+            with st.expander("📖 Interpretasi Base Multiplier", expanded=False):
+                mult_val = latest_bm["multiplier"]
+                st.markdown(
+                    f"**Multiplier = {mult_val:.3f}x** artinya: "
+                    f"setiap Rp 1 ekspansi di sektor **basis** (LQ \u2265 1) mendorong "
+                    f"total perekonomian {selected_name} sebesar **Rp {mult_val:.2f}**.\n\n"
+                    "**Sektor Basis** = sektor dengan LQ \u2265 1 (wilayah lebih "
+                    "terspesialisasi dibanding rata-rata provinsi). "
+                    "Semakin tinggi multiplier → semakin kuat daya ungkit sektor basis "
+                    "terhadap ekonomi lokal."
                 )

@@ -957,3 +957,237 @@ def chart_rrg_trail(trail_data: dict, title="Relative Rotation Graph (RRG)",
     )
     _apply_dark(fig)
     return fig
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHART ANALISIS LANJUTAN
+# ══════════════════════════════════════════════════════════════════════════════
+
+def chart_convergence(sigma_series, beta_result=None, title="Konvergensi Ekonomi"):
+    """Grafik Sigma Convergence (garis) + scatter Beta Convergence."""
+    from plotly.subplots import make_subplots as _msp
+
+    has_beta = beta_result is not None and beta_result.get("data")
+    rows_n = 2 if has_beta else 1
+    subplot_titles = ["Sigma Convergence — Std Dev ln(PDRB/Kapita)"]
+    if has_beta:
+        subplot_titles.append(
+            f"Beta Convergence — β={beta_result['beta']:.4f}, R²={beta_result['r2']:.3f}"
+        )
+
+    fig = _msp(rows=rows_n, cols=1, subplot_titles=subplot_titles,
+               vertical_spacing=0.14)
+
+    # ── Sigma ────────────────────────────────────────────────────────────────
+    perds   = [s["period"] for s in sigma_series]
+    sigmas  = [s["sigma"]  for s in sigma_series]
+    trend_color = PALETTE[0]
+    fig.add_trace(go.Scatter(
+        x=perds, y=sigmas, mode="lines+markers",
+        name="σ (Std Dev)", line=dict(color=trend_color, width=2.5),
+        marker=dict(size=5),
+        hovertemplate="Periode: %{x}<br>σ: %{y:.5f}<extra></extra>",
+    ), row=1, col=1)
+
+    # Trendline sigma
+    if len(sigmas) >= 4:
+        import numpy as _np
+        x_idx = list(range(len(sigmas)))
+        coef  = _np.polyfit(x_idx, sigmas, 1)
+        trend = [coef[0]*i + coef[1] for i in x_idx]
+        color_trend = PALETTE[2] if coef[0] < 0 else PALETTE[6]
+        fig.add_trace(go.Scatter(
+            x=perds, y=trend, mode="lines",
+            name="Tren σ", line=dict(color=color_trend, dash="dash", width=1.5),
+            hoverinfo="skip",
+        ), row=1, col=1)
+
+    # ── Beta ─────────────────────────────────────────────────────────────────
+    if has_beta:
+        bd = beta_result["data"]
+        xs = [d["ln_y0"]  for d in bd]
+        ys = [d["growth"] for d in bd]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="markers",
+            name="Kab/Kota",
+            marker=dict(size=9, color=PALETTE[1], opacity=0.8),
+            hovertemplate="ln(PDRB/kap awal): %{x:.3f}<br>Pertumbuhan: %{y:.3f}%<extra></extra>",
+        ), row=2, col=1)
+        # Garis regresi
+        if len(xs) >= 2:
+            import numpy as _np2
+            x_range = [min(xs), max(xs)]
+            b = beta_result["beta"]
+            ic = beta_result["intercept"]
+            y_fit = [b * x + ic for x in x_range]
+            fig.add_trace(go.Scatter(
+                x=x_range, y=y_fit, mode="lines",
+                name=f"Reg (β={b:.4f})",
+                line=dict(color=PALETTE[0], dash="dot", width=2),
+                hoverinfo="skip",
+            ), row=2, col=1)
+        fig.update_xaxes(title_text="ln(PDRB/Kapita Awal)", row=2, col=1)
+        fig.update_yaxes(title_text="Pertumbuhan Tahunan (%)", row=2, col=1)
+
+    fig.update_xaxes(title_text="Periode", tickangle=-45, row=1, col=1)
+    fig.update_yaxes(title_text="σ", row=1, col=1)
+    fig.update_layout(
+        title=dict(text=title, x=0.01),
+        height=720 if has_beta else 400,
+        hovermode="x unified" if not has_beta else "closest",
+        legend=dict(orientation="h", y=-0.12, x=0, font=dict(size=10)),
+        margin=dict(l=60, r=20, t=60, b=100),
+    )
+    _apply_dark(fig)
+    return fig
+
+
+def chart_hhi(hhi_series_dict, kode_names, title="Indeks HHI Diversifikasi Ekonomi"):
+    """
+    Grafik HHI time-series untuk beberapa wilayah.
+    hhi_series_dict: { kode: [{'period','hhi',...}] }
+    """
+    fig = go.Figure()
+    for i, (kode, series) in enumerate(hhi_series_dict.items()):
+        perds = [s["period"] for s in series]
+        hhis  = [s["hhi"]    for s in series]
+        name  = kode_names.get(kode, kode)
+        fig.add_trace(go.Scatter(
+            x=perds, y=hhis, mode="lines+markers",
+            name=name, line=dict(color=PALETTE[i % len(PALETTE)], width=2),
+            marker=dict(size=5),
+            hovertemplate=f"<b>{name}</b><br>Periode: %{{x}}<br>HHI: %{{y:.4f}}<extra></extra>",
+        ))
+
+    # Zona referensi
+    fig.add_hrect(y0=0, y1=0.15,    fillcolor="rgba(56,211,159,0.07)", line_width=0,
+                  annotation_text="Terdiversifikasi", annotation_position="right")
+    fig.add_hrect(y0=0.15, y1=0.25, fillcolor="rgba(255,193,7,0.07)",  line_width=0,
+                  annotation_text="Moderat", annotation_position="right")
+    fig.add_hrect(y0=0.25, y1=1.0,  fillcolor="rgba(248,81,73,0.07)",  line_width=0,
+                  annotation_text="Terkonsentrasi", annotation_position="right")
+
+    n = len(hhi_series_dict)
+    if n > 6:
+        leg = dict(orientation="v", y=1, x=1.01, xanchor="left",
+                   font=dict(size=10, color="#e6edf3"),
+                   bgcolor="rgba(22,27,34,0.95)", bordercolor="rgba(0,212,170,0.35)", borderwidth=1)
+        mar = dict(l=60, r=200, t=50, b=80)
+    else:
+        leg = dict(orientation="h", y=-0.18, x=0, font=dict(size=10))
+        mar = dict(l=60, r=80, t=50, b=100)
+
+    fig.update_layout(
+        title=dict(text=title, x=0.01),
+        xaxis=dict(title="Periode", tickangle=-45),
+        yaxis=dict(title="HHI", range=[0, 1]),
+        height=480, hovermode="x unified",
+        legend=leg, margin=mar,
+    )
+    _apply_dark(fig)
+    return fig
+
+
+def chart_gravity(gravity_rows, kode_names, top_n=20,
+                  title="Interaksi Gravitasi Ekonomi Antar Wilayah"):
+    """Bar chart horizontal — Top-N pasangan wilayah berdasarkan nilai interaksi."""
+    top = gravity_rows[:top_n]
+    labels = [f"{kode_names.get(r['kode_i'], r['kode_i'])[:18]} ↔ "
+              f"{kode_names.get(r['kode_j'], r['kode_j'])[:18]}" for r in top]
+    vals   = [r["interaction"] for r in top]
+    dists  = [r["jarak_km"]    for r in top]
+
+    fig = go.Figure(go.Bar(
+        x=vals[::-1], y=labels[::-1],
+        orientation="h",
+        marker=dict(
+            color=vals[::-1],
+            colorscale="Teal",
+            colorbar=dict(title="Interaksi", thickness=12),
+        ),
+        text=[f"{v:,.0f}" for v in vals[::-1]],
+        textposition="outside",
+        customdata=dists[::-1],
+        hovertemplate="<b>%{y}</b><br>Interaksi: %{x:,.0f}<br>Jarak: %{customdata:.1f} km<extra></extra>",
+    ))
+    fig.update_layout(
+        title=dict(text=title, x=0.01),
+        xaxis=dict(title="Nilai Interaksi (PDRB² / km²)"),
+        yaxis=dict(title=""),
+        height=max(500, top_n * 26 + 120),
+        margin=dict(l=280, r=120, t=60, b=60),
+    )
+    _apply_dark(fig)
+    return fig
+
+
+def chart_sector_priority(priority_data, title="Matriks Prioritas Sektor"):
+    """
+    Scatter plot: sumbu X = LQ, sumbu Y = Competitive Effect (SS),
+    warna = RRG Quadrant, ukuran = priority_score.
+    """
+    if not priority_data:
+        fig = go.Figure()
+        fig.update_layout(title=title)
+        _apply_dark(fig)
+        return fig
+
+    QUAD_COLOR = {
+        "Leading":   PALETTE[0],
+        "Improving": PALETTE[1],
+        "Weakening": PALETTE[4],
+        "Lagging":   PALETTE[6],
+        "N/A":       "#6c757d",
+    }
+
+    for quad in ["Leading", "Improving", "Weakening", "Lagging", "N/A"]:
+        pts = [d for d in priority_data if d["rrg_quad"] == quad]
+        if not pts:
+            continue
+        lq_vals = [d["lq"]  if d["lq"]  is not None else 0 for d in pts]
+        ce_vals = [d["ce"]  if d["ce"]  is not None else 0 for d in pts]
+        sizes   = [(d["priority_score"] + 1) * 10 for d in pts]
+        labels  = [f"{_ck(d['kode_skt'])} – {d['nama'][:30]}" for d in pts]
+        plabels = [d["priority_label"] for d in pts]
+
+        fig_trace = go.Scatter(
+            x=lq_vals, y=ce_vals,
+            mode="markers+text",
+            name=quad,
+            marker=dict(size=sizes, color=QUAD_COLOR[quad],
+                        opacity=0.85, line=dict(width=1, color="rgba(255,255,255,0.3)")),
+            text=[_ck(d["kode_skt"]) for d in pts],
+            textposition="top center",
+            textfont=dict(size=9),
+            customdata=[[l, p] for l, p in zip(labels, plabels)],
+            hovertemplate="<b>%{customdata[0]}</b><br>LQ: %{x:.3f}<br>"
+                          "CE: %{y:,.0f}<br>%{customdata[1]}<extra></extra>",
+        )
+        if "fig" not in dir():
+            fig = go.Figure(fig_trace)
+        else:
+            fig.add_trace(fig_trace)
+
+    if "fig" not in dir():
+        fig = go.Figure()
+
+    fig.add_vline(x=1, line_dash="dash", line_color="rgba(255,255,255,0.3)",
+                  annotation_text="LQ=1", annotation_position="top right")
+    fig.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.3)",
+                  annotation_text="CE=0", annotation_position="right")
+
+    fig.update_layout(
+        title=dict(text=title, x=0.01),
+        xaxis=dict(title="Location Quotient (LQ)"),
+        yaxis=dict(title="Competitive Effect (Shift Share)"),
+        height=580,
+        legend=dict(title="RRG Kuadran", orientation="v",
+                    x=1.01, y=1, xanchor="left",
+                    font=dict(size=10, color="#e6edf3"),
+                    bgcolor="rgba(22,27,34,0.95)",
+                    bordercolor="rgba(0,212,170,0.35)", borderwidth=1),
+        margin=dict(l=70, r=200, t=60, b=70),
+        hovermode="closest",
+    )
+    _apply_dark(fig)
+    return fig

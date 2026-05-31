@@ -715,3 +715,378 @@ def project_pdrb(pdrb_data, kode, tabel, sector_key,
         return None
 
     return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ANALISIS LANJUTAN — TAMBAHAN
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. KONVERGENSI / DIVERGENSI (Beta & Sigma Convergence)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_convergence(pdrb_data, penduduk_data, kode_list, periods=None, tabel="adhb"):
+    """
+    Hitung konvergensi/divergensi PDRB per kapita antar wilayah.
+
+    Returns dict:
+      sigma  : [{'period': p, 'sigma': nilai}, ...]   — std dev ln(PDRB/kap)
+      beta   : {'beta': koef, 'r2': r2, 'converging': bool, 'data': [...]}
+      pdrb_pc: { kode: { period: nilai } }
+    """
+    import math
+
+    kab_list = [k for k in kode_list if k != "3300"]
+    if len(kab_list) < 3:
+        return None
+
+    if periods is None:
+        periods = sorted(pdrb_data.get("3300", {}).get(tabel, {}).get("periods", []))
+
+    # Hitung PDRB per kapita per wilayah per periode
+    pdrb_pc = {}
+    for kode in kab_list:
+        pdrb_pc[kode] = {}
+        for p in periods:
+            pdrb_val = pdrb_data.get(kode, {}).get(tabel, {}).get("total", {}).get(p)
+            pop_val  = penduduk_data.get(kode, {}).get(p)
+            if pdrb_val and pop_val and pop_val > 0:
+                pdrb_pc[kode][p] = pdrb_val / pop_val
+
+    # Sigma Convergence: std dev ln(PDRB/kap) tiap periode
+    sigma_series = []
+    for p in periods:
+        vals = [math.log(pdrb_pc[k][p]) for k in kab_list
+                if p in pdrb_pc.get(k, {}) and pdrb_pc[k][p] > 0]
+        if len(vals) >= 3:
+            mean_v = sum(vals) / len(vals)
+            std_v  = math.sqrt(sum((v - mean_v)**2 for v in vals) / len(vals))
+            sigma_series.append({"period": p, "sigma": round(std_v, 6)})
+
+    # Beta Convergence: reg pertumbuhan PDRB/kap ~ awal PDRB/kap
+    # Gunakan periode pertama & terakhir yang valid
+    valid_perds = [s["period"] for s in sigma_series]
+    beta_result = None
+    if len(valid_perds) >= 8:
+        p_awal  = valid_perds[0]
+        p_akhir = valid_perds[-1]
+        n_yr    = max(1, len(valid_perds) / 4)   # konversi ke tahun
+
+        xy = []
+        for kode in kab_list:
+            y0 = pdrb_pc.get(kode, {}).get(p_awal)
+            y1 = pdrb_pc.get(kode, {}).get(p_akhir)
+            if y0 and y1 and y0 > 0 and y1 > 0:
+                ln_y0   = math.log(y0)
+                growth  = (math.log(y1) - math.log(y0)) / n_yr
+                xy.append((ln_y0, growth, kode))
+
+        if len(xy) >= 4:
+            xs  = [r[0] for r in xy]
+            ys  = [r[1] for r in xy]
+            n   = len(xs)
+            mx  = sum(xs) / n
+            my  = sum(ys) / n
+            ss  = sum((x - mx)**2 for x in xs)
+            sp  = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+            beta_coef = sp / ss if ss != 0 else 0
+            intercept = my - beta_coef * mx
+            y_pred    = [beta_coef * x + intercept for x in xs]
+            ss_res    = sum((ys[i] - y_pred[i])**2 for i in range(n))
+            ss_tot    = sum((y - my)**2 for y in ys)
+            r2        = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+            beta_result = {
+                "beta":       round(beta_coef, 6),
+                "intercept":  round(intercept, 6),
+                "r2":         round(r2, 4),
+                "converging": beta_coef < 0,
+                "p_awal":     p_awal,
+                "p_akhir":    p_akhir,
+                "data": [{"kode": r[2],
+                          "ln_y0": round(r[0], 4),
+                          "growth": round(r[1]*100, 4)} for r in xy],
+            }
+
+    return {"sigma": sigma_series, "beta": beta_result, "pdrb_pc": pdrb_pc}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. INDEKS HERFINDAHL-HIRSCHMAN (HHI) — Diversifikasi Ekonomi
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_hhi(pdrb_data, kode, tabel="adhb", periods=None):
+    """
+    Hitung HHI (Herfindahl-Hirschman Index) untuk satu wilayah per periode.
+    HHI = Σ(si²) di mana si = share sektor i terhadap total PDRB.
+    HHI mendekati 0 = sangat terdiversifikasi; mendekati 1 = sangat terkonsentrasi.
+
+    Returns: [{'period': p, 'hhi': nilai, 'n_sectors': n}, ...]
+    """
+    scts = pdrb_data.get(kode, {}).get(tabel, {}).get("sectors", {})
+    main_scts = {k: v for k, v in scts.items() if v.get("parent") is None}
+
+    if periods is None:
+        periods = sorted(pdrb_data.get(kode, {}).get(tabel, {}).get("periods", []))
+
+    result = []
+    for p in periods:
+        vals = [v["values"].get(p, 0) or 0 for v in main_scts.values()]
+        total = sum(vals)
+        if total <= 0:
+            continue
+        shares = [v / total for v in vals]
+        hhi    = sum(s**2 for s in shares)
+        result.append({
+            "period":    p,
+            "hhi":       round(hhi, 6),
+            "hhi_norm":  round((hhi - 1/len(shares)) / (1 - 1/len(shares)), 4)
+                         if len(shares) > 1 else 0,
+            "n_sectors": len([v for v in vals if v > 0]),
+        })
+    return result
+
+
+def compute_hhi_regional(pdrb_data, kode_list, tabel="adhb", periods=None):
+    """
+    Hitung HHI untuk beberapa wilayah, kembalikan dict { kode: [hhi_series] }.
+    """
+    return {kode: compute_hhi(pdrb_data, kode, tabel, periods) for kode in kode_list}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. OVERLAY SEKTOR PRIORITAS (LQ + Shift Share + RRG)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_sector_priority(pdrb_data, kode, tabel="adhb", periods=None,
+                            ref_kode="3300"):
+    """
+    Overlay tiga analisis: LQ, Shift Share (Competitive Effect), dan RRG quadrant.
+    Menghasilkan matriks prioritas sektor.
+
+    Returns: list of dict per sektor utama:
+      { kode_skt, nama, lq, ce (competitive effect SS), rrg_quad,
+        priority_score, priority_label }
+    """
+    if periods is None:
+        periods = sorted(pdrb_data.get(kode, {}).get(tabel, {}).get("periods", []))
+    if not periods:
+        return []
+
+    last_p  = periods[-1]
+    # Pilih periode awal untuk SS (4 tahun lalu / 16 periode)
+    n_back  = min(16, len(periods) - 1)
+    first_p = periods[-n_back - 1] if n_back > 0 else periods[0]
+
+    scts_r   = pdrb_data.get(kode,     {}).get(tabel, {}).get("sectors", {})
+    scts_ref = pdrb_data.get(ref_kode, {}).get(tabel, {}).get("sectors", {})
+    main_scts = {k: v for k, v in scts_r.items() if v.get("parent") is None}
+
+    # ── LQ (periode terakhir) ──────────────────────────────────────────────
+    total_r   = sum((v["values"].get(last_p) or 0) for v in main_scts.values())
+    total_ref = sum((pdrb_data.get(ref_kode, {}).get(tabel, {})
+                     .get("total", {}).get(last_p, 0) or 0) for _ in [1])
+    total_ref = pdrb_data.get(ref_kode, {}).get(tabel, {}).get("total", {}).get(last_p) or 0
+
+    lq_vals = {}
+    for ks, sv in main_scts.items():
+        vi_r   = sv["values"].get(last_p) or 0
+        vi_ref = (scts_ref.get(ks, {}).get("values", {}).get(last_p) or 0)
+        vref_t = total_ref
+        vr_t   = total_r
+        if vr_t > 0 and vref_t > 0 and vi_ref > 0:
+            lq_vals[ks] = round((vi_r / vr_t) / (vi_ref / vref_t), 4)
+        else:
+            lq_vals[ks] = None
+
+    # ── Shift Share — Competitive Effect ──────────────────────────────────
+    ce_vals = {}
+    for ks, sv in main_scts.items():
+        v0_r   = sv["values"].get(first_p) or 0
+        v1_r   = sv["values"].get(last_p)  or 0
+        v0_ref = (scts_ref.get(ks, {}).get("values", {}).get(first_p) or 0)
+        v1_ref = (scts_ref.get(ks, {}).get("values", {}).get(last_p)  or 0)
+        if v0_r > 0 and v0_ref > 0:
+            gr_ref = (v1_ref - v0_ref) / v0_ref if v0_ref > 0 else 0
+            ce_vals[ks] = round((v1_r - v0_r) - v0_r * gr_ref, 2)
+        else:
+            ce_vals[ks] = None
+
+    # ── RRG Quadrant (periode terakhir vs sebelumnya) ─────────────────────
+    rrg_data = compute_rrg_trail(pdrb_data, kode, tabel=tabel,
+                                  ref_kode=ref_kode, n_periods=8)
+    rrg_quad = {}
+    for ks, rd in rrg_data.items():
+        trail = rd.get("trail", [])
+        if trail:
+            latest = trail[-1]
+            rs  = latest.get("RS",  100)
+            rgr = latest.get("RGR", 100)
+            if rs >= 100 and rgr >= 100:
+                rrg_quad[ks] = "Leading"
+            elif rs >= 100 and rgr < 100:
+                rrg_quad[ks] = "Weakening"
+            elif rs < 100 and rgr >= 100:
+                rrg_quad[ks] = "Improving"
+            else:
+                rrg_quad[ks] = "Lagging"
+        else:
+            rrg_quad[ks] = "N/A"
+
+    # ── Priority Score ─────────────────────────────────────────────────────
+    QUAD_SCORE = {"Leading": 3, "Improving": 2, "Weakening": 1, "Lagging": 0, "N/A": 0}
+    result = []
+    for ks, sv in main_scts.items():
+        lq  = lq_vals.get(ks)
+        ce  = ce_vals.get(ks)
+        qd  = rrg_quad.get(ks, "N/A")
+
+        score = 0
+        if lq is not None and lq >= 1:  score += 2
+        if ce is not None and ce > 0:   score += 2
+        score += QUAD_SCORE.get(qd, 0)
+
+        if score >= 6:    label = "⭐ Unggulan Utama"
+        elif score >= 4:  label = "✅ Potensial"
+        elif score >= 2:  label = "⚠️ Perlu Perhatian"
+        else:             label = "🔻 Tertinggal"
+
+        result.append({
+            "kode_skt":       ks,
+            "nama":           sv.get("name", ks),
+            "lq":             lq,
+            "lq_status":      "Basis" if (lq or 0) >= 1 else "Non-Basis",
+            "ce":             ce,
+            "ce_status":      "Kompetitif" if (ce or 0) > 0 else "Tidak Kompetitif",
+            "rrg_quad":       qd,
+            "priority_score": score,
+            "priority_label": label,
+        })
+
+    result.sort(key=lambda x: -x["priority_score"])
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. ANALISIS GRAVITASI EKONOMI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_gravity(pdrb_data, kode_list, periods=None, tabel="adhb"):
+    """
+    Model gravitasi ekonomi: Interaction_ij = k * (PDRB_i * PDRB_j) / Dist_ij²
+    Menggunakan koordinat dari centroids_jateng.py.
+
+    Returns: list of dict { wilayah_i, wilayah_j, pdrb_i, pdrb_j,
+                             jarak_km, interaction, periode }
+    """
+    import math
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from data.centroids_jateng import CENTROIDS_JATENG as centroids
+    except ImportError:
+        return []
+
+    if periods is None:
+        periods = sorted(pdrb_data.get("3300", {}).get(tabel, {}).get("periods", []))
+    if not periods:
+        return []
+
+    last_p = periods[-1]
+    kab_list = [k for k in kode_list if k != "3300" and k in centroids]
+
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * \
+            math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+        return R * 2 * math.asin(math.sqrt(a))
+
+    rows = []
+    for i in range(len(kab_list)):
+        for j in range(i + 1, len(kab_list)):
+            ki, kj = kab_list[i], kab_list[j]
+            pi_val = pdrb_data.get(ki, {}).get(tabel, {}).get("total", {}).get(last_p)
+            pj_val = pdrb_data.get(kj, {}).get(tabel, {}).get("total", {}).get(last_p)
+            if not pi_val or not pj_val:
+                continue
+            lat_i, lon_i, _ = centroids[ki]
+            lat_j, lon_j, _ = centroids[kj]
+            dist = haversine(lat_i, lon_i, lat_j, lon_j)
+            if dist < 1:
+                dist = 1
+            interaction = (pi_val * pj_val) / (dist ** 2)
+            rows.append({
+                "kode_i":      ki,
+                "kode_j":      kj,
+                "pdrb_i":      round(pi_val, 2),
+                "pdrb_j":      round(pj_val, 2),
+                "jarak_km":    round(dist, 1),
+                "interaction": round(interaction, 2),
+                "periode":     last_p,
+            })
+
+    rows.sort(key=lambda x: -x["interaction"])
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. ECONOMIC BASE MULTIPLIER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_base_multiplier(pdrb_data, kode, tabel="adhb", periods=None,
+                             ref_kode="3300"):
+    """
+    Hitung Economic Base Multiplier dari LQ.
+    Basic PDRB  = sektor dengan LQ >= 1 (ekspor ke luar wilayah)
+    Non-basic   = sektor dengan LQ < 1
+    Multiplier  = Total PDRB / Basic PDRB
+
+    Returns: list of dict per periode:
+      { period, total_pdrb, basic_pdrb, nonbasic_pdrb, multiplier,
+        basic_sectors: [{ kode, nama, lq, nilai }] }
+    """
+    if periods is None:
+        periods = sorted(pdrb_data.get(kode, {}).get(tabel, {}).get("periods", []))
+
+    scts_r   = pdrb_data.get(kode,     {}).get(tabel, {}).get("sectors", {})
+    scts_ref = pdrb_data.get(ref_kode, {}).get(tabel, {}).get("sectors", {})
+    main_scts = {k: v for k, v in scts_r.items() if v.get("parent") is None}
+
+    result = []
+    for p in periods:
+        total_r   = sum((v["values"].get(p) or 0) for v in main_scts.values())
+        total_ref = pdrb_data.get(ref_kode, {}).get(tabel, {}).get("total", {}).get(p) or 0
+        if total_r <= 0 or total_ref <= 0:
+            continue
+
+        basic_pdrb    = 0
+        basic_sectors = []
+        for ks, sv in main_scts.items():
+            vi_r   = sv["values"].get(p) or 0
+            vi_ref = scts_ref.get(ks, {}).get("values", {}).get(p) or 0
+            if total_r > 0 and total_ref > 0 and vi_ref > 0:
+                lq = (vi_r / total_r) / (vi_ref / total_ref)
+                if lq >= 1.0 and vi_r > 0:
+                    # Basic PDRB = bagian yang "diekspor" (melebihi kebutuhan lokal)
+                    basic_part = vi_r * (1 - 1/lq)
+                    basic_pdrb += basic_part
+                    basic_sectors.append({
+                        "kode": ks,
+                        "nama": sv.get("name", ks),
+                        "lq":   round(lq, 4),
+                        "nilai_basic": round(basic_part, 2),
+                    })
+
+        if basic_pdrb > 0:
+            multiplier = total_r / basic_pdrb
+            result.append({
+                "period":       p,
+                "total_pdrb":   round(total_r, 2),
+                "basic_pdrb":   round(basic_pdrb, 2),
+                "nonbasic_pdrb":round(total_r - basic_pdrb, 2),
+                "multiplier":   round(multiplier, 4),
+                "basic_sectors": sorted(basic_sectors, key=lambda x: -x["lq"]),
+            })
+
+    return result
