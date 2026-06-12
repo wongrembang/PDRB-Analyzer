@@ -192,7 +192,7 @@ Ketika ada data PDRB terbaru dari BPS:
 
 ## Kontak & Dukungan
 
-Jika mengalami masalah yang tidak tercantum di sini, silakan hubungi pengelola sistem atau BPS Jawa Tengah.
+Jika mengalami masalah yang tidak tercantum di sini, silakan hubungi pengelola sistem.
 
 ---
 
