@@ -1191,3 +1191,175 @@ def chart_sector_priority(priority_data, title="Matriks Prioritas Sektor"):
     )
     _apply_dark(fig)
     return fig
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OUTPUT GAP
+# ──────────────────────────────────────────────────────────────────────────────
+
+def chart_output_gap(gap_data, nama_wilayah="Wilayah", title=None):
+    """
+    Chart 2-panel untuk satu wilayah:
+      Panel atas  : garis PDRB Aktual vs PDRB Potensial (HP Trend)
+      Panel bawah : bar Output Gap (%), merah = negatif, hijau = positif
+
+    Parameters
+    ----------
+    gap_data : list of dict  {period, actual, potential, gap_abs, gap_pct}
+               ATAU dict {"error": str}
+    """
+    from plotly.subplots import make_subplots as _msp
+
+    if isinstance(gap_data, dict) and "error" in gap_data:
+        fig = go.Figure()
+        fig.add_annotation(text=f"⚠️ {gap_data['error']}", xref="paper", yref="paper",
+                           x=0.5, y=0.5, showarrow=False,
+                           font=dict(size=14, color="#f78166"))
+        fig.update_layout(title=title or f"Output Gap – {nama_wilayah}")
+        _apply_dark(fig)
+        return fig
+
+    if not gap_data:
+        fig = go.Figure()
+        fig.update_layout(title=title or f"Output Gap – {nama_wilayah}")
+        _apply_dark(fig)
+        return fig
+
+    periods   = [d["period"]    for d in gap_data]
+    actual    = [d["actual"]    for d in gap_data]
+    potential = [d["potential"] for d in gap_data]
+    gap_pct   = [d["gap_pct"]   for d in gap_data]
+    gap_abs   = [d["gap_abs"]   for d in gap_data]
+
+    bar_colors = [PALETTE[0] if g >= 0 else PALETTE[2] for g in gap_pct]
+
+    fig = _msp(rows=2, cols=1,
+               subplot_titles=("PDRB Aktual vs Potensial (Juta Rp)",
+                               "Output Gap (%)"),
+               shared_xaxes=True,
+               vertical_spacing=0.12,
+               row_heights=[0.55, 0.45])
+
+    # ── Panel atas: Aktual & Potensial
+    fig.add_trace(go.Scatter(
+        x=periods, y=actual,
+        name="PDRB Aktual",
+        mode="lines+markers",
+        line=dict(color=PALETTE[0], width=2.5),
+        marker=dict(size=5),
+        hovertemplate="<b>%{x}</b><br>Aktual: Rp %{y:,.0f} jt<extra></extra>",
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=periods, y=potential,
+        name="PDRB Potensial (HP Trend)",
+        mode="lines",
+        line=dict(color=PALETTE[4], width=2, dash="dash"),
+        hovertemplate="<b>%{x}</b><br>Potensial: Rp %{y:,.0f} jt<extra></extra>",
+    ), row=1, col=1)
+
+    # ── Panel bawah: Output Gap bar
+    fig.add_trace(go.Bar(
+        x=periods, y=gap_pct,
+        name="Output Gap (%)",
+        marker_color=bar_colors,
+        customdata=gap_abs,
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Gap: <b>%{y:.2f}%</b><br>"
+            "Selisih: Rp %{customdata:,.0f} jt<extra></extra>"
+        ),
+    ), row=2, col=1)
+
+    # Garis nol di panel bawah
+    fig.add_hline(y=0, line_width=1, line_dash="dot",
+                  line_color="rgba(255,255,255,0.35)", row=2, col=1)
+
+    fig.update_layout(
+        title=dict(text=title or f"Output Gap – {nama_wilayah}", x=0.01),
+        height=580,
+        legend=dict(
+            orientation="h", x=0.0, y=1.08,
+            xanchor="left", yanchor="bottom",
+            bgcolor="rgba(22,27,34,0.92)",
+            bordercolor="rgba(0,212,170,0.35)", borderwidth=1,
+            font=dict(size=11, color="#e6edf3"),
+        ),
+        margin=dict(l=70, r=40, t=80, b=60),
+        hovermode="x unified",
+        bargap=0.25,
+    )
+    _apply_dark(fig)
+    return fig
+
+
+def chart_output_gap_regional(gap_regional, nama_map=None,
+                              title="Perbandingan Output Gap Regional (%)"):
+    """
+    Garis output gap (%) untuk beberapa kab/kota dalam satu grafik.
+
+    Parameters
+    ----------
+    gap_regional : dict  {kode: list_of_dict | {"error": ...}}
+    nama_map     : dict  {kode: nama_wilayah}
+    """
+    if nama_map is None:
+        nama_map = {}
+
+    fig = go.Figure()
+    has_data = False
+
+    for i, (kode, data) in enumerate(gap_regional.items()):
+        if isinstance(data, dict) and "error" in data:
+            continue
+        if not data:
+            continue
+        has_data = True
+        nama    = nama_map.get(kode, kode)
+        periods = [d["period"]  for d in data]
+        gaps    = [d["gap_pct"] for d in data]
+
+        fig.add_trace(go.Scatter(
+            x=periods, y=gaps,
+            name=nama,
+            mode="lines+markers",
+            line=dict(color=PALETTE[i % len(PALETTE)], width=2),
+            marker=dict(size=5),
+            hovertemplate=f"<b>{nama}</b> | %{{x}}<br>Gap: %{{y:.2f}}%<extra></extra>",
+        ))
+
+    # Garis nol
+    fig.add_hline(y=0, line_width=1, line_dash="dot",
+                  line_color="rgba(255,255,255,0.35)")
+
+    if not has_data:
+        fig.add_annotation(text="⚠️ Tidak ada data yang cukup untuk ditampilkan",
+                           xref="paper", yref="paper", x=0.5, y=0.5,
+                           showarrow=False, font=dict(size=14, color="#f78166"))
+
+    n_traces = sum(1 for d in gap_regional.values()
+                   if not (isinstance(d, dict) and "error" in d) and d)
+    if n_traces > 6:
+        leg = dict(orientation="v", x=1.01, y=1, xanchor="left",
+                   font=dict(size=10, color="#e6edf3"),
+                   bgcolor="rgba(22,27,34,0.95)",
+                   bordercolor="rgba(0,212,170,0.35)", borderwidth=1)
+        margin_r = 220
+    else:
+        leg = dict(orientation="h", x=0.0, y=-0.18, xanchor="left",
+                   bgcolor="rgba(22,27,34,0.92)",
+                   bordercolor="rgba(255,255,255,0.15)", borderwidth=1,
+                   font=dict(size=11, color="#e6edf3"))
+        margin_r = 40
+
+    fig.update_layout(
+        title=dict(text=title, x=0.01),
+        xaxis=dict(title="Periode"),
+        yaxis=dict(title="Output Gap (%)"),
+        height=500,
+        legend=leg,
+        margin=dict(l=70, r=margin_r, t=60, b=90),
+        hovermode="x unified",
+    )
+    _apply_dark(fig)
+    return fig

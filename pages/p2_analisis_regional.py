@@ -160,7 +160,7 @@ def render():
     kode_names = {k: v["name"] for k, v in kode_wilayah.items()}
 
     # ── TABS ──
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
         "📊 Perbandingan Nilai",
         "🔬 LQ & Shift Share",
         "🔄 RRG Regional",
@@ -169,6 +169,7 @@ def render():
         "🎯 Diversifikasi (HHI)",
         "🌐 Gravitasi Ekonomi",
         "⭐ Overlay Prioritas",
+        "📉 Output Gap",
     ])
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1060,3 +1061,96 @@ infrastruktur konektivitas untuk meningkatkan integrasi regional.
                 st.dataframe(df_all_ov, use_container_width=True, hide_index=True)
             else:
                 st.info("Tidak ada sektor dengan skor prioritas tinggi di wilayah terpilih.")
+
+    # =====================================================================
+    # TAB 9: OUTPUT GAP REGIONAL
+    # =====================================================================
+    with tab9:
+        st.subheader("Output Gap Regional")
+        st.caption(
+            "Perbandingan output gap antar kabupaten/kota. "
+            "Output gap positif = ekspansif (di atas potensi); negatif = resesif."
+        )
+
+        c_og1, c_og2 = st.columns([3, 1])
+        with c_og1:
+            og_kab_opts = [k for k in kode_names if k != "3300"]
+            og_kab_default = [k for k in selected_kodes if k != "3300"]
+            og_kab_sel = st.multiselect(
+                "Pilih Kabupaten/Kota",
+                options=og_kab_opts,
+                default=og_kab_default,
+                format_func=lambda k: kode_names.get(k, k),
+                key="og_kab_sel",
+            )
+        with c_og2:
+            og_tabel_r = st.radio(
+                "Tabel PDRB",
+                ["ADHK (Konstan)", "ADHB (Berlaku)"],
+                horizontal=False,
+                key="og_tbl_p2",
+                help="ADHK direkomendasikan (tidak terpengaruh inflasi)."
+            )
+            og_t_r = "adhk" if "ADHK" in og_tabel_r else "adhb"
+
+        if not og_kab_sel:
+            st.info("Pilih minimal satu kabupaten/kota.")
+        else:
+            with st.spinner("Menghitung output gap semua wilayah terpilih..."):
+                og_regional = analytics.compute_output_gap_regional(
+                    pdrb_data, og_kab_sel, tabel=og_t_r,
+                )
+
+            # ── Chart perbandingan garis ──
+            fig_og_r = charts.chart_output_gap_regional(
+                og_regional,
+                nama_map=kode_names,
+                title=f"Perbandingan Output Gap ({og_t_r.upper()}) - Wilayah Terpilih",
+            )
+            st.plotly_chart(fig_og_r, use_container_width=True)
+
+            # ── Snapshot periode terakhir ──
+            st.markdown("#### Snapshot Output Gap Periode Terakhir")
+            snap_rows = []
+            for kode in og_kab_sel:
+                data = og_regional.get(kode, {})
+                if isinstance(data, dict) and "error" in data:
+                    snap_rows.append({
+                        "Wilayah":     kode_names.get(kode, kode),
+                        "Periode":     "—",
+                        "PDRB Aktual": "—",
+                        "Potensial":   "—",
+                        "Output Gap (%)": "—",
+                        "Kondisi":     data["error"],
+                    })
+                elif data:
+                    last = data[-1]
+                    kondisi = "Ekspansif" if last["gap_pct"] >= 0 else "Resesif"
+                    snap_rows.append({
+                        "Wilayah":     kode_names.get(kode, kode),
+                        "Periode":     last["period"],
+                        "PDRB Aktual": f"{last['actual']:,.0f}",
+                        "Potensial":   f"{last['potential']:,.0f}",
+                        "Output Gap (%)": f"{last['gap_pct']:+.2f}%",
+                        "Kondisi":     kondisi,
+                    })
+
+            if snap_rows:
+                df_snap = pd.DataFrame(snap_rows)
+                st.dataframe(df_snap, use_container_width=True, hide_index=True)
+
+            # ── Chart per wilayah individual ──
+            with st.expander("Chart Output Gap per Wilayah (detail)", expanded=False):
+                for kode in og_kab_sel:
+                    data = og_regional.get(kode, {})
+                    if isinstance(data, dict) and "error" in data:
+                        st.warning(f"{kode_names.get(kode, kode)}: {data['error']}")
+                        continue
+                    if not data:
+                        continue
+                    fig_ind = charts.chart_output_gap(
+                        data,
+                        nama_wilayah=kode_names.get(kode, kode),
+                        title=f"Output Gap - {kode_names.get(kode, kode)}",
+                    )
+                    st.plotly_chart(fig_ind, use_container_width=True)

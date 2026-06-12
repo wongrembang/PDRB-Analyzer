@@ -282,12 +282,13 @@ yang tersedia di halaman **Analisis Satu Wilayah** (tab Sektor Prioritas & Base 
 dan **Analisis Regional** (tab Konvergensi, HHI, Gravitasi, Overlay Prioritas).
         """)
 
-        adv1, adv2, adv3, adv4, adv5 = st.tabs([
+        adv1, adv2, adv3, adv4, adv5, adv6 = st.tabs([
             "📉 Konvergensi",
             "🎯 HHI Diversifikasi",
             "🌐 Gravitasi Ekonomi",
             "⭐ Overlay Prioritas",
             "🏗️ Base Multiplier",
+            "📊 Output Gap",
         ])
 
 
@@ -374,5 +375,48 @@ Sektor Basis = sektor dengan LQ >= 1 (produksi melebihi kebutuhan lokal).
 Artinya: setiap Rp 1 ekspansi di sektor basis mendorong total PDRB sebesar Rp m.
 
 Multiplier tinggi = daya ungkit besar. Multiplier rendah = sektor basis perlu diperkuat.
+            """)
+
+        with adv6:
+            st.markdown("""
+### Output Gap
+
+Output gap mengukur selisih antara **PDRB aktual** dan **PDRB potensial**, dinyatakan dalam persen terhadap potensi.
+
+**Rumus:**
+`Output Gap (%) = (PDRB_aktual - PDRB_potensial) / PDRB_potensial x 100`
+
+**Metode estimasi PDRB Potensial: HP Filter (Hodrick-Prescott)**
+
+HP Filter memisahkan deret waktu PDRB menjadi dua komponen:
+- **Komponen Tren** (PDRB Potensial): kapasitas produksi jangka panjang
+- **Komponen Siklus** (Output Gap): fluktuasi jangka pendek di atas/bawah tren
+
+Minimasi fungsi objektif:
+`min { Sum(y_t - tau_t)^2 + lambda * Sum[(tau_{t+1} - tau_t) - (tau_t - tau_{t-1})]^2 }`
+
+Parameter lambda = 1.600 adalah standar untuk data **triwulanan** (Hodrick & Prescott, 1997).
+
+---
+
+**Interpretasi Output Gap:**
+
+| Output Gap | Kondisi | Implikasi Kebijakan |
+|------------|---------|---------------------|
+| > +2% | Ekspansif kuat | Waspadai overheating, pertimbangkan kebijakan kontraktif (kenaikan suku bunga, pengurangan stimulus) |
+| 0% s/d +2% | Ekspansif moderat | Pertumbuhan sehat, pertahankan kebijakan saat ini |
+| -2% s/d 0% | Resesif ringan | Dorong stimulasi fiskal atau investasi infrastruktur |
+| < -2% | Resesif kuat | Intervensi kebijakan segera diperlukan |
+
+---
+
+**Sigma Convergence Output Gap:**
+Jika output gap beberapa wilayah bergerak bersama (menyempit atau melebar secara serentak),
+ini mengindikasikan adanya **sinkronisasi siklus ekonomi** antar wilayah.
+
+**Catatan Penting:**
+- Gunakan PDRB ADHK (harga konstan) untuk output gap agar tidak terpengaruh inflasi
+- Diperlukan minimal **8 periode** data untuk estimasi HP Filter yang akurat
+- Hasil dapat berbeda tergantung rentang data yang digunakan (end-point bias)
             """)
 

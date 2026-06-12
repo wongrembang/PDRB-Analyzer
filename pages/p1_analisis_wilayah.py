@@ -106,13 +106,14 @@ def render():
         return
 
     # ── TAB ANALISIS ──
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Grafik & Tabel",
         "🥧 Distribusi ADHB",
         "🔬 LQ & Shift Share",
         "🔄 RRG",
         "⭐ Sektor Prioritas",
         "🏗️ Base Multiplier",
+        "📉 Output Gap",
     ])
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -734,10 +735,81 @@ def render():
                 } for s in latest_bm["basic_sectors"]])
                 st.dataframe(df_bs, use_container_width=True, hide_index=True)
 
-            with st.expander("📖 Interpretasi Base Multiplier", expanded=False):
+            with st.expander("Interpretasi Base Multiplier", expanded=False):
                 mult_val = latest_bm["multiplier"]
                 st.markdown(
-                    "**Sektor Basis** = sektor dengan LQ \u2265 1 (lebih spesialisasi "
+                    "**Sektor Basis** = sektor dengan LQ >= 1 (lebih spesialisasi "
                     "dari rata-rata provinsi). Semakin tinggi multiplier, semakin besar "
                     "daya ungkit sektor basis terhadap total perekonomian lokal."
                 )
+
+    # =====================================================================
+    # TAB 7: OUTPUT GAP
+    # =====================================================================
+    with tab7:
+        st.subheader("Output Gap")
+        st.caption(
+            "Output Gap mengukur selisih antara PDRB aktual dan PDRB potensial (HP Filter). "
+            "Nilai positif = kondisi ekspansif; nilai negatif = kondisi resesif."
+        )
+
+        og_tabel = st.radio(
+            "Tabel PDRB", ["ADHK (Harga Konstan)", "ADHB (Harga Berlaku)"],
+            horizontal=True, key="og_tbl_p1",
+            help="Disarankan ADHK agar tidak terpengaruh inflasi."
+        )
+        og_t = "adhk" if "ADHK" in og_tabel else "adhb"
+
+        with st.spinner("Menghitung output gap (HP Filter)..."):
+            og_data = analytics.compute_output_gap(pdrb_data, kode, tabel=og_t)
+
+        if isinstance(og_data, dict) and "error" in og_data:
+            st.warning(f"Perhatian: {og_data['error']}")
+        elif not og_data:
+            st.warning("Data output gap tidak tersedia.")
+        else:
+            fig_og = charts.chart_output_gap(
+                og_data,
+                nama_wilayah=selected_name,
+                title=f"Output Gap - {selected_name} ({og_t.upper()})",
+            )
+            st.plotly_chart(fig_og, use_container_width=True)
+
+            latest_og = og_data[-1]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Periode Terakhir", latest_og["period"])
+            c2.metric("PDRB Aktual",      f"{latest_og['actual']/1e6:,.3f} T")
+            c3.metric("PDRB Potensial",   f"{latest_og['potential']/1e6:,.3f} T")
+            gap_val = latest_og["gap_pct"]
+            c4.metric(
+                "Output Gap",
+                f"{gap_val:+.2f}%",
+                delta="Ekspansif" if gap_val >= 0 else "Resesif",
+                delta_color="normal" if gap_val >= 0 else "inverse",
+            )
+
+            with st.expander("Tabel Output Gap", expanded=False):
+                df_og = pd.DataFrame(og_data)
+                df_og.columns = ["Periode", "PDRB Aktual (Jt Rp)",
+                                 "PDRB Potensial (Jt Rp)", "Gap Absolut (Jt Rp)",
+                                 "Output Gap (%)"]
+                st.dataframe(df_og.style.format({
+                    "PDRB Aktual (Jt Rp)":   "{:,.2f}",
+                    "PDRB Potensial (Jt Rp)": "{:,.2f}",
+                    "Gap Absolut (Jt Rp)":    "{:,.2f}",
+                    "Output Gap (%)":          "{:+.2f}",
+                }), use_container_width=True, hide_index=True)
+
+            with st.expander("Interpretasi Output Gap", expanded=False):
+                st.markdown("""
+**Metode:** HP Filter (Hodrick-Prescott), lambda = 1.600 (standar data triwulanan)
+
+| Output Gap | Kondisi | Implikasi Kebijakan |
+|------------|---------|---------------------|
+| > +2% | Ekspansif kuat | Waspadai overheating, pertimbangkan kebijakan kontraktif |
+| 0% s/d +2% | Ekspansif moderat | Pertumbuhan sehat, pertahankan kebijakan |
+| -2% s/d 0% | Resesif ringan | Dorong stimulasi fiskal/investasi |
+| < -2% | Resesif kuat | Intervensi segera diperlukan |
+
+*PDRB Potensial* = komponen tren HP Filter = kapasitas produksi jangka panjang wilayah.
+                """)

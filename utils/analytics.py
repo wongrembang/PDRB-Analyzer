@@ -1090,3 +1090,87 @@ def compute_base_multiplier(pdrb_data, kode, tabel="adhb", periods=None,
             })
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────
+# OUTPUT GAP  (HP Filter, λ = 1600 untuk data triwulanan)
+# ─────────────────────────────────────────────────────────────────────
+
+def compute_output_gap(pdrb_data, kode, tabel="adhk", periods=None):
+    """
+    Hitung output gap satu wilayah menggunakan HP Filter.
+
+    Output gap (%) = (PDRB_aktual - PDRB_potensial) / PDRB_potensial × 100
+
+    Returns
+    -------
+    list of dict:
+        period, actual, potential, gap_abs, gap_pct
+    Atau dict {"error": ...} bila data tidak cukup.
+    """
+    try:
+        from statsmodels.tsa.filters.hp_filter import hpfilter
+    except ImportError:
+        return {"error": "statsmodels tidak terinstal"}
+
+    if kode not in pdrb_data:
+        return {"error": f"Kode {kode} tidak ditemukan"}
+
+    tbl = pdrb_data[kode].get(tabel, {})
+    if not tbl:
+        return {"error": f"Tabel {tabel} tidak tersedia untuk {kode}"}
+
+    all_periods = tbl.get("periods", [])
+    total_vals  = tbl.get("total", {})
+
+    if periods:
+        use_periods = [p for p in all_periods if p in periods]
+    else:
+        use_periods = list(all_periods)
+
+    # Ambil nilai total PDRB — harus berurutan & tanpa NaN
+    series = []
+    valid_periods = []
+    for p in use_periods:
+        v = total_vals.get(p)
+        if v is not None and v > 0:
+            series.append(float(v))
+            valid_periods.append(p)
+
+    if len(series) < 8:
+        return {"error": "Data terlalu sedikit untuk HP Filter (minimal 8 periode)"}
+
+    series_arr = np.array(series)
+
+    # HP Filter  λ=1600 standar triwulanan
+    cycle, trend = hpfilter(series_arr, lamb=1600)
+
+    result = []
+    for i, p in enumerate(valid_periods):
+        actual    = series_arr[i]
+        potential = trend[i]
+        gap_abs   = actual - potential
+        gap_pct   = (gap_abs / potential * 100) if potential != 0 else 0.0
+        result.append({
+            "period":    p,
+            "actual":    round(actual, 2),
+            "potential": round(potential, 2),
+            "gap_abs":   round(gap_abs, 2),
+            "gap_pct":   round(gap_pct, 4),
+        })
+
+    return result
+
+
+def compute_output_gap_regional(pdrb_data, kode_list, tabel="adhk", periods=None):
+    """
+    Hitung output gap untuk banyak wilayah sekaligus.
+
+    Returns
+    -------
+    dict  {kode: list_of_dict | {"error": ...}}
+    """
+    result = {}
+    for kode in kode_list:
+        result[kode] = compute_output_gap(pdrb_data, kode, tabel=tabel, periods=periods)
+    return result
