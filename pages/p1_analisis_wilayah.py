@@ -338,6 +338,15 @@ def render():
 
             sector_names = {k: v["name"] for k, v in sectors.items()}
 
+            import re as _re
+            def _clean_kode(ks):
+                """Q54→Q, P53→P, M51→MN, dst. (strip angka dari kode sektor utama)."""
+                m = _re.match(r'^([A-Za-z]+)\d+$', str(ks))
+                if m:
+                    ltr = m.group(1).upper()
+                    return "MN" if ltr == "M" else ltr
+                return str(ks)
+
             # ── Chart full-width ──
             if lq_view == "Satu Periode":
                 prov_tbl   = pdrb_data.get("3300", {}).get(tabel, {})
@@ -373,15 +382,6 @@ def render():
                         """)
 
                     with st.expander("📋 Tabel LQ", expanded=False):
-                        import re as _re
-                        def _clean_kode(ks):
-                            """Q54→Q, P53→P, M51→MN, dst. (strip angka dari kode sektor utama)."""
-                            m = _re.match(r'^([A-Za-z]+)\d+$', str(ks))
-                            if m:
-                                ltr = m.group(1).upper()
-                                return "MN" if ltr == "M" else ltr
-                            return str(ks)
-
                         lq_rows = [
                             {
                                 "Kode": _clean_kode(ks),
